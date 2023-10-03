@@ -29,7 +29,7 @@ def load_tables(dataset:str) -> dict:
             with gtfs_zip.open(file_name) as file:
                 file_name_without_extension = file_name.split('.')[0]
                 text_data = file.read().decode('utf-8')
-                df = pd.read_csv(io.StringIO(text_data), delimiter=',')
+                df = pd.read_csv(io.StringIO(text_data), delimiter=',', dtype=str)
                 gtfs[file_name_without_extension] = df.copy()
     
     return gtfs
@@ -72,17 +72,17 @@ def vali_date(date:str, format:str) -> bool:
     
     return True
 
-def get_interstop_speed(gtfs:dict, date:str, format:str='%Y%m%d'):
+""" def get_interstop_speed(gtfs:dict, date:str, format:str='%Y%m%d'):
 
-    """
+    ""
     Returns the average speed between stations for every route within a particular day.
 
     inputs: gtfs(dict) -> pandas DataFrame containing all of the fetched tables from the GTFS zipfile.
             date(str) -> date that the average speed wants to be checked on.
 
     output: avg_speed(dict)-> dictionary containing the average speed for every route. 
-    
-    """
+
+    ""
 
     dow_dict = {
         0 : 'monday',
@@ -123,9 +123,62 @@ def get_interstop_speed(gtfs:dict, date:str, format:str='%Y%m%d'):
         service_id = cal[(cal.start_date <= dtdate) & (cal.end_date >= dtdate) & (cal[dow]==1), 'service_id'].values
 
     return service_id
+ """    
+
+def get_services(gtfs:dict, date:str, format:str='%Y%m%d') -> np.array:
+
+    """
+    Returns a list of the services available for a specific day.
+
+    input:  gtfs(dict) -> a dictionary containing all gtfs tables
+            date(str) -> the date for which the available services want to be retrieved
+            format(str) -> the format in which the date is parsed
+
+    output: services(np.array) -> an array containing all of the service ids for the date.
+    """
     
+    dow_dict = {
+        0 : 'monday',
+        1 : 'tuesday',
+        2 : 'wednesday',
+        3 : 'thursday',
+        4 : 'friday',
+        5 : 'saturday',
+        6 : 'sunday'
+    }
 
+    if not vali_date(date, format):
+        raise ValueError('The date is not valid')
+    
+    dt_date = dt.strptime(date, format)
+    dow = dow_dict[dt_date.weekday()]
 
+    calendar = gtfs['calendar'].copy()
+    calendar.start_date = pd.to_datetime(calendar.start_date)
+    calendar.end_date = pd.to_datetime(calendar.end_date)
+
+    conditions = ((calendar.start_date <= dt_date) &
+                  (calendar.end_date >= dt_date) &
+                  (calendar[dow] == '1'))
+
+    services = calendar.loc[conditions,'service_id'].values
+    
+    try:
+        calendar_dates = gtfs['calendar_dates'].copy()
+        exceptions = calendar_dates.loc[calendar_dates.date == dt_date.strftime('%Y%m%d'),:]
+
+        if exceptions.shape[0] > 0:
+            to_add = exceptions.loc[exceptions.exception_type == '1', 'service_id'].values
+            to_remove = exceptions.loc[exceptions.exception_type == '2', 'service_id'].values
+
+            services = np.array(list(set(services) - set(to_remove) | set(to_add)))
+
+            return services
+        else:
+            return services
+
+    except:
+        return services
 
 #%% TEST
 
@@ -136,4 +189,5 @@ gtfs_test = {'stops':0, 'stop_times':1, 'trips':2, 'routes':3}
 check_tables(gtfs)
 cds = gtfs['calendar_dates']
 #print(cds.loc[cds.date==20230417,:])
-print(get_interstop_speed(gtfs, '20230217'))
+
+print(get_services(gtfs, date='20230605'))
