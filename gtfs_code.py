@@ -72,59 +72,6 @@ def vali_date(date:str, format:str) -> bool:
     
     return True
 
-""" def get_interstop_speed(gtfs:dict, date:str, format:str='%Y%m%d'):
-
-    ""
-    Returns the average speed between stations for every route within a particular day.
-
-    inputs: gtfs(dict) -> pandas DataFrame containing all of the fetched tables from the GTFS zipfile.
-            date(str) -> date that the average speed wants to be checked on.
-
-    output: avg_speed(dict)-> dictionary containing the average speed for every route. 
-
-    ""
-
-    dow_dict = {
-        0 : 'monday',
-        1 : 'tuesday',
-        2 : 'wednesday',
-        3 : 'thursday',
-        4 : 'friday',
-        5 : 'saturday',
-        6 : 'sunday'
-    }
-
-    if not vali_date(date=date, format=format):
-        raise ValueError(f"Incorrect date format, you specified {format}")
-        return False
-    
-    date = dt.strptime(date, format).strftime('%Y%m%d')
-
-    if 'calendar_dates' in gtfs.keys():
-        cal_dates = gtfs['calendar_dates'].loc[(gtfs['calendar_dates'].date==int(date)),:]
-        exc_type = cal_dates.exception_type.values
-        print(cal_dates)
-        print(exc_type)
-
-        if len(cal_dates) == 0:
-            f = 0
-        elif 1 not in exc_type:
-            raise ValueError("The date you selected has no transit service available in the provided GTFS data.")
-            return False
-        else:
-            service_id = cal_dates.loc[cal_dates.exception_type==1,'service_id'].values
-        
-    else:
-        dtdate = dt.strptime(date, format)
-        dow = dow_dict[dtdate.weekday()]
-        cal = gtfs['calendar'].copy()
-        cal['start_date'] = pd.to_datetime(arg = cal.start_date, format='%Y%m%d')
-        cal['end_date'] = pd.to_datetime(arg = cal.end_date, format='%Y%m%d')
-        service_id = cal[(cal.start_date <= dtdate) & (cal.end_date >= dtdate) & (cal[dow]==1), 'service_id'].values
-
-    return service_id
- """    
-
 def get_services(gtfs:dict, date:str, format:str='%Y%m%d') -> np.array:
 
     """
@@ -180,6 +127,30 @@ def get_services(gtfs:dict, date:str, format:str='%Y%m%d') -> np.array:
     except:
         return services
 
+def get_trips(gtfs:dict, date:str, format:str='%Y%m%d', routes:np.array=np.array([])) -> np.array:
+
+    """
+    Returns a numpy array of the trips planned on a specific date.
+
+    input : gtfs(dict) -> dictionary containing the gtfs tables under pandas dataframe format.
+            date(str) -> the date for which the trips we want to obtain.
+            format(str) -> the format the date is parsed in.
+
+    output : trip_id(np.array) -> a numpy array of the trips. 
+    """
+
+    services = get_services(gtfs, date, format)
+    trips = gtfs['trips'].copy()
+
+    trips = trips[trips.service_id.isin(services)]
+
+    if routes.shape[0]>0:
+        trips = trips[trips.route_id.isin(routes)]
+        return trips
+    else:
+        return trips
+
+
 #%% TEST
 
 dataset = 'EMT_VLC.zip'
@@ -190,4 +161,5 @@ check_tables(gtfs)
 cds = gtfs['calendar_dates']
 #print(cds.loc[cds.date==20230417,:])
 
-print(get_services(gtfs, date='20230605'))
+print(get_services(gtfs, date='20230624'))
+# %%
