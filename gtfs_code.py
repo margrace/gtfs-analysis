@@ -149,6 +149,40 @@ def get_trips(gtfs:dict, date:str, format:str='%Y%m%d', routes:np.array=np.array
         return trips
     else:
         return trips
+    
+def get_interstop_speed(gtfs:dict, date:str, format:str='%Y%m%d', routes:np.array=np.array([])) -> dict:
+
+    """
+    Returns the average speed between stations by route.
+
+    input:  gtfs(dict) -> a dictionary containing all gtfs files
+            date(str) -> the date the analysis is to be made of.
+            format(str) -> the format the date is parsed in.
+            routes(np.array) -> an array of the routes that want to be included (if empty, all)
+    
+    output: speed(dict) -> a dictionary containing the average speed for each route.
+    """
+
+    trip_ids = get_trips(gtfs, date, format, routes)    
+    trips = gtfs['trips'].copy()
+    stop_times = gtfs['stop_times'].copy()
+    trips = trips[trips.trip_id.isin(trip_ids)]
+    stop_times = stop_times[stop_times.trip_id.isin(trip_ids)]
+
+    stop_times = pd.DataFrame()
+
+    stop_times.stop_sequence = stop_times.stop_sequence.astype(int)
+    stop_times.sort_values(by=['trip_id','stop_sequence'], inplace=True)
+
+    stop_times['arrival_seconds'] = (stop_times.arrival_time.str.split(':',expand=True).astype(int) * np.array([3600,60,1])).sum(axis=1)
+    stop_times['departure_seconds'] = (stop_times.departure_time.str.split(':',expand=True).astype(int) * np.array([3600,60,1])).sum(axis=1)
+
+    stop_times['interstop_time'] = stop_times.arrival_seconds - stop_times.groupby('trip_id').departure_seconds.shift()
+
+
+
+
+
 
 
 #%% TEST
