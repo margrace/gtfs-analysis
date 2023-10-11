@@ -5,6 +5,8 @@ import zipfile
 import numpy as np
 import pandas as pd
 import geopandas as gpd
+from shapely.geometry import Point, LineString
+import pyproj
 import matplotlib.pyplot as plt
 from datetime import datetime as dt
 
@@ -150,7 +152,7 @@ def get_trips(gtfs:dict, date:str, format:str='%Y%m%d', routes:np.array=np.array
     else:
         return trips
     
-def get_interstop_speed(gtfs:dict, date:str, format:str='%Y%m%d', routes:np.array=np.array([])) -> dict:
+def get_interstop_speed(gtfs:dict, date:str, crs:int, format:str='%Y%m%d', routes:np.array=np.array([])) -> dict:
 
     """
     Returns the average speed between stations by route.
@@ -163,12 +165,22 @@ def get_interstop_speed(gtfs:dict, date:str, format:str='%Y%m%d', routes:np.arra
     output: speed(dict) -> a dictionary containing the average speed for each route.
     """
 
-    trip_ids = get_trips(gtfs, date, format, routes)    
     trips = gtfs['trips'].copy()
     stop_times = gtfs['stop_times'].copy()
-    trips = trips[trips.trip_id.isin(trip_ids)]
-    stop_times = stop_times[stop_times.trip_id.isin(trip_ids)]
+    stops = gtfs['stops'].copy()
+    shapes = gtfs['shapes'].copy()
 
+    trip_ids = get_trips(gtfs, date, format, routes)    
+
+    trips = trips[trips.trip_id.isin(trip_ids)]
+    shapes = shapes[shapes.shape_id.isin(trips.shape_id)]
+    stop_times = stop_times[stop_times.trip_id.isin(trip_ids)]
+    stops = stops[stops.stop_id.isin(stop_times.stop_id)]
+
+    stops['geometry'] = stops[['stop_pt_lon','stop_pt_lat']].apply(lambda x : Point([x[0], x[1]], srid=4326), axis=1)
+    stop_loc_dict = stops.set_index('stop_id').geometry.to_dict()
+
+    
     stop_times = pd.DataFrame()
 
     stop_times.stop_sequence = stop_times.stop_sequence.astype(int)
@@ -179,6 +191,8 @@ def get_interstop_speed(gtfs:dict, date:str, format:str='%Y%m%d', routes:np.arra
 
     stop_times['interstop_time'] = stop_times.arrival_seconds - stop_times.groupby('trip_id').departure_seconds.shift()
 
+
+    
 
 
 
