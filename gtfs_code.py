@@ -165,22 +165,32 @@ def get_interstop_speed(gtfs:dict, date:str, crs:int, format:str='%Y%m%d', route
     output: speed(dict) -> a dictionary containing the average speed for each route.
     """
 
-    trips = gtfs['trips'].copy()
-    stop_times = gtfs['stop_times'].copy()
-    stops = gtfs['stops'].copy()
-    shapes = gtfs['shapes'].copy()
+    stop_times_dtype = {'stop_sequence':int}
+    stops_dtype = {'stop_lon':float,
+                   'stop_lat':float}
+    shapes_dtype = {'shape_pt_lon':float,
+                    'shape_pt_lat':float,
+                    'shape_pt_sequence':int}
 
-    trip_ids = get_trips(gtfs, date, format, routes)    
+    trips = gtfs['trips'].copy()
+    stop_times = gtfs['stop_times'].copy().astype(stop_times_dtype)
+    stops = gtfs['stops'].copy().astype(stops_dtype)
+    shapes = gtfs['shapes'].copy().astype(shapes_dtype)
+
+    trip_ids = get_trips(gtfs, date, format, routes) 
 
     trips = trips[trips.trip_id.isin(trip_ids)]
     shapes = shapes[shapes.shape_id.isin(trips.shape_id)]
     stop_times = stop_times[stop_times.trip_id.isin(trip_ids)]
     stops = stops[stops.stop_id.isin(stop_times.stop_id)]
 
-    stops['geometry'] = stops[['stop_pt_lon','stop_pt_lat']].apply(lambda x : Point([x[0], x[1]], srid=4326), axis=1)
+    stops['geometry'] = stops[['stop_lon','stop_lat']].apply(lambda x : Point([x[0], x[1]]), axis=1)
     stop_loc_dict = stops.set_index('stop_id').geometry.to_dict()
 
-    
+    shapes = shapes.sort_values(by=['shape_id','shape_pt_sequence'])
+    shapes['point_geometry'] = shapes[['shape_pt_lon','shape_pt_lat']].apply(lambda x : Point([x[0], x[1]]), axis=1)
+    shape_linestring = shapes.groupby('shape_id').point_geometry.apply(lambda x : LineString(list(x))).squeeze().to_dict()
+
     stop_times = pd.DataFrame()
 
     stop_times.stop_sequence = stop_times.stop_sequence.astype(int)
@@ -190,6 +200,15 @@ def get_interstop_speed(gtfs:dict, date:str, crs:int, format:str='%Y%m%d', route
     stop_times['departure_seconds'] = (stop_times.departure_time.str.split(':',expand=True).astype(int) * np.array([3600,60,1])).sum(axis=1)
 
     stop_times['interstop_time'] = stop_times.arrival_seconds - stop_times.groupby('trip_id').departure_seconds.shift()
+
+    stop_times['stop_geometry'] = stop_times.stop_id.map(stop_loc_dict)
+    stop_times = pd.merge(left = stop_times,
+                          right = trips[['trip_id','shape_id']],
+                          on='trip_id')
+    stop_times['shape_geometry'] = stop_times.shape_id.map(shape_linestring)
+
+    
+    
 
 
     
@@ -201,9 +220,8 @@ def get_interstop_speed(gtfs:dict, date:str, crs:int, format:str='%Y%m%d', route
 
 #%% TEST
 
-dataset = 'EMT_VLC.zip'
+dataset = 'VLC/EMT_VLC.zip'
 gtfs = load_tables(dataset)
-gtfs_test = {'stops':0, 'stop_times':1, 'trips':2, 'routes':3}
 
 check_tables(gtfs)
 cds = gtfs['calendar_dates']
