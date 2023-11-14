@@ -12,6 +12,29 @@ from datetime import datetime as dt
 
 #%% FUNCTIONS
 
+def check_tables(gtfs:dict):
+
+    """
+    Checks if all essential GTFS tables are included in the provided dataset
+
+    input : gtfs(dict) -> pandas DataFrame containing all of the fetched tables from the GTFS zipfile.
+    """
+
+    essential_tables = ['agency', 'calendar', 'routes', 'stop_times', 'stops', 'trips']
+    present_tables = list(gtfs.keys())
+    missing_tables = list(set(essential_tables)-set(present_tables))
+
+    if missing_tables == []:
+        print("All essential tables are included.")
+    else:
+        error_str = "The "
+        for mt in missing_tables:
+            error_str += f"\"{mt}\", "
+        error_str = error_str[:-2] + " tables are missing, please check your GTFS zipfile."
+        raise ValueError(error_str)
+
+
+
 def load_tables(dataset:str) -> dict:
 
     """ 
@@ -33,29 +56,12 @@ def load_tables(dataset:str) -> dict:
                 text_data = file.read().decode('utf-8')
                 df = pd.read_csv(io.StringIO(text_data), delimiter=',', dtype=str)
                 gtfs[file_name_without_extension] = df.copy()
-    
-    return gtfs
 
-def check_tables(gtfs:dict):
-
-    """
-    Checks if all essential GTFS tables are included in the provided dataset
-
-    input : gtfs(dict) -> pandas DataFrame containing all of the fetched tables from the GTFS zipfile.
-    """
-
-    essential_tables = ['agency', 'calendar', 'routes', 'stop_times', 'stops', 'trips']
-    present_tables = list(gtfs.keys())
-    missing_tables = list(set(essential_tables)-set(present_tables))
-
-    if len(missing_tables) == 0:
-        print("All essential tables are included.")
-    else:
-        error_str = "The "
-        for mt in missing_tables:
-            error_str += f"\"{mt}\", "
-        error_str = error_str[:-2] + " tables are missing, please check your GTFS zipfile."
-        print(error_str)
+    try:
+        check_tables(gtfs)
+        return gtfs
+    except:
+        raise ValueError
 
 def vali_date(date:str, format:str) -> bool:
 
@@ -128,6 +134,78 @@ def get_services(gtfs:dict, date:str, format:str='%Y%m%d') -> np.array:
 
     except:
         return services
+    
+def seconds_after_midnight(hour:np.array) -> np.array:
+
+    """
+    For a given array of timestamps coded as HH:MM:SS, it returns an array of the 
+    seconds after midnight.
+
+    input:  hour(np.array) -> a string numpy array containing all the timestamps.
+    output: total_seconds(np.array) -> an integer numpy array containing the seconds after midnight.
+    
+    """
+    
+    hour_array = np.array(list(np.char.split(hour, ':'))).astype(int)
+
+    total_seconds = hour_array.dot(np.array([3600,60,1]))
+
+    return total_seconds
+
+
+    
+def interstop_time(stop_times:pd.DataFrame) -> pd.DataFrame:
+
+    """
+    Returns the time between two stops for a stop_times table.
+    
+    input:  stop_times(pd.DataFrame) -> a DataFrame containing a stop_times standard GTFS table.
+    output: stop_times(pd.DataFrame) -> the same DataFrame, but with the addition of the interstop_time column.
+
+    """
+
+    stop_times = stop_times.astype({'stop_sequence':int})
+
+    stop_times.sort_values(by=['trip_id','stop_sequence'], inplace=True)
+
+    stop_times['arrival_seconds'] = seconds_after_midnight(stop_times.arrival_time.values.astype(str))
+    stop_times['departure_seconds'] = seconds_after_midnight(stop_times.departure_time.values.astype(str))
+
+    stop_times['interstop_time'] = stop_times.arrival_seconds - stop_times.groupby('trip_id').departure_seconds.shift()
+    stop_times['interstop_time'].fillna(value=0, inplace=True)
+
+    return stop_times.copy()
+
+
+def trips_from_frequencies(gtfs:dict, date:str, format:str='%Y%m%d') -> pd.DataFrame:
+
+    """
+    For a given frequency table, it returns the trips and stop_times in the standard GTFS schema.
+    
+    input:  gtfs(dict) -> a dictionary containing all gtfs tables
+            date(str) -> the date for which the available services want to be retrieved
+            format(str) -> the format in which the date is parsed
+    
+    output: freq_trips (pd.DataFrame) ->
+            freq_st (pd.DataFrame) ->
+    """
+
+    freq = gtfs['frequencies'].copy().astype({'headway_secs':int})
+    trips = gtfs['trips'].copy()
+    stop_times = gtfs['stop_times'].copy().astype({'stop_sequence':int})
+
+    trip_ids = get_trips(gtfs=gtfs, date=date, format=format)
+
+    freq = freq[freq.trip_id.isin(trip_ids)]
+    trips = trips[trips.trip_id.isin(freq.trip_id.values)]
+    stop_times = stop_times[stop_times.trip_id.isin(freq.trip_id.values)]
+
+    freq['arrival_seconds'] = seconds_after_midnight(freq.arrival_time.values.astype(str))
+    freq['departure_seconds'] = seconds_after_midnight(freq.departure_seconds.values.astype(str))
+    stop_times = interstop_time(stop_times)
+
+    
+
 
 def get_trips(gtfs:dict, date:str, format:str='%Y%m%d', routes:np.array=np.array([])) -> np.array:
 
@@ -191,16 +269,7 @@ def get_interstop_speed(gtfs:dict, date:str, crs:int, format:str='%Y%m%d', route
     shapes['point_geometry'] = shapes[['shape_pt_lon','shape_pt_lat']].apply(lambda x : Point([x[0], x[1]]), axis=1)
     shape_linestring = shapes.groupby('shape_id').point_geometry.apply(lambda x : LineString(list(x))).squeeze().to_dict()
 
-    stop_times = pd.DataFrame()
-
-    stop_times.stop_sequence = stop_times.stop_sequence.astype(int)
-    stop_times.sort_values(by=['trip_id','stop_sequence'], inplace=True)
-
-    stop_times['arrival_seconds'] = (stop_times.arrival_time.str.split(':',expand=True).astype(int) * np.array([3600,60,1])).sum(axis=1)
-    stop_times['departure_seconds'] = (stop_times.departure_time.str.split(':',expand=True).astype(int) * np.array([3600,60,1])).sum(axis=1)
-
-    stop_times['interstop_time'] = stop_times.arrival_seconds - stop_times.groupby('trip_id').departure_seconds.shift()
-
+    stop_times = interstop_time(stop_times=stop_times)
     stop_times['stop_geometry'] = stop_times.stop_id.map(stop_loc_dict)
     stop_times = pd.merge(left = stop_times,
                           right = trips[['trip_id','shape_id']],
