@@ -44,10 +44,9 @@ def load_tables(dataset:str) -> dict:
     output : gtfs (dict) -> dictionary containing all of the tables in the GTFS zip file.
     """
 
-    root = os.path.dirname(os.path.abspath(__file__))
     gtfs = {}
 
-    with zipfile.ZipFile(root+f'\data\{dataset}','r') as gtfs_zip:
+    with zipfile.ZipFile(dataset,'r') as gtfs_zip:
         file_names = gtfs_zip.namelist()
 
         for file_name in file_names:
@@ -289,12 +288,16 @@ def get_interstop_speed(gtfs:dict, date:str, crs:int, format:str='%Y%m%d', route
 
 #%% TEST
 
-dataset = 'VLC/EMT_VLC.zip'
-gtfs = load_tables(dataset)
+if __name__ == '__main__':
 
-check_tables(gtfs)
-cds = gtfs['calendar_dates']
-#print(cds.loc[cds.date==20230417,:])
+    root = os.path.dirname(os.path.abspath(__file__))
 
-print(get_services(gtfs, date='20230624'))
+    dataset = root + '/data/VLC/EMT_VLC.zip'
+    gtfs = load_tables(dataset)
+
+    check_tables(gtfs)
+    cds = gtfs['calendar_dates']
+    #print(cds.loc[cds.date==20230417,:])
+
+    print(get_services(gtfs, date='20230624'))
 # %%
